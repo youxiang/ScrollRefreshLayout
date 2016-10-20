@@ -1,6 +1,7 @@
 package com.youxiang.scrollrefreshlayout;
 
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.util.AttributeSet;
 import android.widget.FrameLayout;
 
@@ -9,15 +10,17 @@ import android.widget.FrameLayout;
  */
 
 public class ScrollRefreshLayout extends FrameLayout {
+    public ScrollRefreshLayout(Context context) {
+        this(context, null);
+    }
+
     public ScrollRefreshLayout(Context context, AttributeSet attrs) {
-        super(context, attrs);
+        this(context, attrs, 0);
     }
 
     public ScrollRefreshLayout(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-    }
-
-    public ScrollRefreshLayout(Context context) {
-        super(context);
+        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.ScrollRefreshLayout);
+        a.recycle();
     }
 }
