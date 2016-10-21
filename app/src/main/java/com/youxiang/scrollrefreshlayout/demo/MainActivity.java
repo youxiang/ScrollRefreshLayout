@@ -21,7 +21,7 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
         mWebView = (WebView) findViewById(R.id.my_webview);
-        mWebView.loadUrl("http://lcodecorex.github.io");
+        mWebView.loadUrl("http://read.qidian.com/BookReader/aQRPygNMl2n-JlVC31J8Aw2,GiF2kNuMZNhp4rPq4Fd4KQ2.aspx");
 
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
         fab.setOnClickListener(new View.OnClickListener() {
