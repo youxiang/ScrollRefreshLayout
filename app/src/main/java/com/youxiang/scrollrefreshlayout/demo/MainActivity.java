@@ -1,4 +1,4 @@
-package com.youxiang.scrollrefreshlayout;
+package com.youxiang.scrollrefreshlayout.demo;
 
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
@@ -8,8 +8,10 @@ import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.webkit.WebView;
 
 public class MainActivity extends AppCompatActivity {
+    WebView mWebView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -17,6 +19,9 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
+        mWebView = (WebView) findViewById(R.id.my_webview);
+        mWebView.loadUrl("http://read.qidian.com/BookReader/aQRPygNMl2n-JlVC31J8Aw2,GiF2kNuMZNhp4rPq4Fd4KQ2.aspx");
 
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
         fab.setOnClickListener(new View.OnClickListener() {
