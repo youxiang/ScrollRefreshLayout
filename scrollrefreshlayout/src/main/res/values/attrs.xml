@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <declare-styleable name="ScrollRefreshLayout"></declare-styleable>
+    <declare-styleable name="ScrollRefreshLayout">
+        <attr name="refreshEnabled" format="boolean" />
+        <attr name="loadMoreEnabled" format="boolean" />
+        <attr name="headerHeight" format="dimension" />
+        <attr name="footerHeight" format="dimension" />
+        <attr name="overScrollHeight" format="dimension" />
+    </declare-styleable>
 </resources>

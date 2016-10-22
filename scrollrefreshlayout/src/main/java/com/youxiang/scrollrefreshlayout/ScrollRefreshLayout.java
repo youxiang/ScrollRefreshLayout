@@ -33,26 +33,18 @@ import com.youxiang.scrollrefreshlayout.uitls.ScrollUtil;
 public class ScrollRefreshLayout extends FrameLayout {
     private static final int MSG_START_SCROLL = 0;
     private static final String TAG = ScrollRefreshLayout.class.getSimpleName();
+    protected boolean isRefreshing;
+    protected boolean isLoadingMore;
     private boolean mRefreshEnabled;
     private boolean mLoadMoreEnabled;
-
     private float mHeaderHeight;
     private float mFooterHeight;
-
     private FrameLayout mHeaderLayout;
     private IHeader mHeader;
-
     private FrameLayout mFooterLayout;
     private IFooter mFooter;
-
     private float mMaxScrollHeaderLength;
-
     private float mMaxScrollFooterLength;
-
-    protected boolean isRefreshing;
-
-    protected boolean isLoadingMore;
-
     private PullListener mPullListener;
 
     private DecelerateInterpolator mInterpolator;
@@ -62,11 +54,25 @@ public class ScrollRefreshLayout extends FrameLayout {
     private int mTouchSlop;
 
     private float mVelocityY;
+    GestureDetector gestureDetector = new GestureDetector(getContext(), new GestureDetector.SimpleOnGestureListener() {
+        @Override
+        public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+            if (isRefreshing && distanceY >= mTouchSlop) {
+                tryCancelRefreshing();
+            } else if (isLoadingMore && distanceY <= -mTouchSlop) {
+                tryCancelLoadingMore();
+            }
+            return super.onScroll(e1, e2, distanceX, distanceY);
+        }
 
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+            mVelocityY = velocityY;
+            return super.onFling(e1, e2, velocityX, velocityY);
+        }
+    });
     private float mOverScrollHeight;
-
     private float mMotionX;
-
     private float mMotionY;
 
     public ScrollRefreshLayout(Context context) {
@@ -82,15 +88,15 @@ public class ScrollRefreshLayout extends FrameLayout {
         if (isInEditMode()) return;
         checkChildLimit();
 
-        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.RecyclerRefreshLayout, defStyleAttr, 0);
-        mRefreshEnabled = a.getBoolean(R.styleable.RecyclerRefreshLayout_refreshEnabled, true);
-        mLoadMoreEnabled = a.getBoolean(R.styleable.RecyclerRefreshLayout_loadMoreEnabled, true);
+        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.ScrollRefreshLayout, defStyleAttr, 0);
+        mRefreshEnabled = a.getBoolean(R.styleable.ScrollRefreshLayout_refreshEnabled, true);
+        mLoadMoreEnabled = a.getBoolean(R.styleable.ScrollRefreshLayout_loadMoreEnabled, true);
         float defaultHeaderHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 64, context.getResources().getDisplayMetrics());
-        mHeaderHeight = a.getDimension(R.styleable.RecyclerRefreshLayout_headerHeight, defaultHeaderHeight);
+        mHeaderHeight = a.getDimension(R.styleable.ScrollRefreshLayout_headerHeight, defaultHeaderHeight);
         float defaultFooterHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 64, context.getResources().getDisplayMetrics());
-        mFooterHeight = a.getDimension(R.styleable.RecyclerRefreshLayout_footerHeight, defaultFooterHeight);
+        mFooterHeight = a.getDimension(R.styleable.ScrollRefreshLayout_footerHeight, defaultFooterHeight);
         float defaultOverScrollHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 80, context.getResources().getDisplayMetrics());
-        mOverScrollHeight = a.getDimension(R.styleable.RecyclerRefreshLayout_overScrollHeight, defaultOverScrollHeight);
+        mOverScrollHeight = a.getDimension(R.styleable.ScrollRefreshLayout_overScrollHeight, defaultOverScrollHeight);
         a.recycle();
 
         mMaxScrollHeaderLength = 4 * mHeaderHeight;
@@ -131,15 +137,43 @@ public class ScrollRefreshLayout extends FrameLayout {
             }
         });
         if (mTarget instanceof RecyclerView) {
+            ((RecyclerView) mTarget).addOnScrollListener(new RecyclerView.OnScrollListener() {
+                @Override
+                public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
+                    if (!isRefreshing && !isLoadingMore && newState == RecyclerView.SCROLL_STATE_IDLE) {
+                        if (mVelocityY >= 5000 && ScrollUtil.isRecyclerViewToTop((RecyclerView) mTarget)) {
+                            animOverScrollTop();
+                        } else if (mVelocityY <= -5000 && ScrollUtil.isRecyclerViewToBottom((RecyclerView) mTarget)) {
+                            animOverScrollBottom();
+                        }
+                    }
+                    super.onScrollStateChanged(recyclerView, newState);
+                }
+            });
 
         } else if (mTarget instanceof AbsListView) {
+            ((AbsListView) mTarget).setOnScrollListener(new AbsListView.OnScrollListener() {
+                @Override
+                public void onScrollStateChanged(AbsListView view, int scrollState) {
+                }
+
+                @Override
+                public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount, int totalItemCount) {
+                    if (!isRefreshing && !isLoadingMore) {
+                        if (firstVisibleItem == 0 && mVelocityY >= 5000 && ScrollUtil.isAbsListViewToTop((AbsListView) mTarget)) {
+                            animOverScrollTop();
+                        } else if (((AbsListView) mTarget).getLastVisiblePosition() == totalItemCount - 1 && mVelocityY <= -5000 && ScrollUtil.isAbsListViewToBottom((AbsListView) mTarget)) {
+                            animOverScrollBottom();
+                        }
+                    }
+                }
+            });
 
         } else {
             mTarget.getViewTreeObserver().addOnScrollChangedListener(new ViewTreeObserver.OnScrollChangedListener() {
                 @Override
                 public void onScrollChanged() {
                     int scrollY = mTarget.getScrollY();
-                    Log.e(TAG, "onScrollChanged " + scrollY);
                     if (!isRefreshing && !isLoadingMore) {
                         if (scrollY <= 0 && mVelocityY >= 5000) {
                             animOverScrollTop();
@@ -170,36 +204,17 @@ public class ScrollRefreshLayout extends FrameLayout {
 
     private void animOverScrollTop() {
         mVelocityY = 0;
-        ObjectAnimator anim = ObjectAnimator.ofFloat(mTarget, "translationY", 0, mOverScrollHeight, 0).setDuration(400);
+        ObjectAnimator anim = ObjectAnimator.ofFloat(mTarget, "translationY", 0, mOverScrollHeight, 0).setDuration(300);
         anim.setInterpolator(new DecelerateInterpolator());
         anim.start();
     }
-
 
     private void animOverScrollBottom() {
         mVelocityY = 0;
-        ObjectAnimator anim = ObjectAnimator.ofFloat(mTarget, "translationY", 0, -mOverScrollHeight, 0).setDuration(400);
+        ObjectAnimator anim = ObjectAnimator.ofFloat(mTarget, "translationY", 0, -mOverScrollHeight, 0).setDuration(300);
         anim.setInterpolator(new DecelerateInterpolator());
         anim.start();
     }
-
-    GestureDetector gestureDetector = new GestureDetector(getContext(), new GestureDetector.SimpleOnGestureListener() {
-        @Override
-        public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-            if (isRefreshing && distanceY >= mTouchSlop) {
-                tryCancelRefreshing();
-            } else if (isLoadingMore && distanceY <= -mTouchSlop) {
-                tryCancelLoadingMore();
-            }
-            return super.onScroll(e1, e2, distanceX, distanceY);
-        }
-
-        @Override
-        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-            mVelocityY = velocityY;
-            return super.onFling(e1, e2, velocityX, velocityY);
-        }
-    });
 
     private void tryCancelLoadingMore() {
         // // TODO: 2016/10/21
