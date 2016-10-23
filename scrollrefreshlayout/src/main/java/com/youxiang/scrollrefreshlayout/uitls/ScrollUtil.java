@@ -142,4 +142,35 @@ public class ScrollUtil {
         }
         return false;
     }
+
+    public static boolean canChildScrollUp(View view) {
+        if (view != null) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+                if (view instanceof AbsListView) {
+                    AbsListView absListView = (AbsListView) view;
+                    return absListView.getChildCount() > 0 && (absListView.getFirstVisiblePosition() > 0 || absListView.getChildAt(0).getTop() < absListView.getPaddingTop());
+                } else {
+                    return ViewCompat.canScrollVertically(view, -1) || view.getScrollY() > 0;
+                }
+            } else {
+                return ViewCompat.canScrollVertically(view, -1);
+            }
+        }
+        return false;
+    }
+
+    public static boolean canChildScrollDown(View view) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+            if (view instanceof AbsListView) {
+                final AbsListView absListView = (AbsListView) view;
+                return absListView.getChildCount() > 0
+                        && (absListView.getLastVisiblePosition() < absListView.getChildCount() - 1
+                        || absListView.getChildAt(absListView.getChildCount() - 1).getBottom() > absListView.getPaddingBottom());
+            } else {
+                return ViewCompat.canScrollVertically(view, 1) || view.getScrollY() < 0;
+            }
+        } else {
+            return ViewCompat.canScrollVertically(view, 1);
+        }
+    }
 }

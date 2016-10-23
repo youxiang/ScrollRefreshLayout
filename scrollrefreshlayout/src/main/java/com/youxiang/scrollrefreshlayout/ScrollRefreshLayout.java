@@ -1,6 +1,7 @@
 package com.youxiang.scrollrefreshlayout;
 
 import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.support.design.widget.AppBarLayout;
@@ -31,20 +32,27 @@ import com.youxiang.scrollrefreshlayout.uitls.ScrollUtil;
  */
 
 public class ScrollRefreshLayout extends FrameLayout {
-    private static final int MSG_START_SCROLL = 0;
+
     private static final String TAG = ScrollRefreshLayout.class.getSimpleName();
+    private static final int STATE_PULL_DOWN_TO_REFRESH = 0;
+    private static final int STATE_PULL_UP_TO_LOAD_MORE = 1;
     protected boolean isRefreshing;
     protected boolean isLoadingMore;
+    private int mState = STATE_PULL_DOWN_TO_REFRESH;
     private boolean mRefreshEnabled;
     private boolean mLoadMoreEnabled;
     private float mHeaderHeight;
     private float mFooterHeight;
+
+    private float mMaxScrollHeight;
+
     private FrameLayout mHeaderLayout;
     private IHeader mHeader;
     private FrameLayout mFooterLayout;
     private IFooter mFooter;
-    private float mMaxScrollHeaderLength;
-    private float mMaxScrollFooterLength;
+
+    private float mOverScrollHeight;
+
     private PullListener mPullListener;
 
     private DecelerateInterpolator mInterpolator;
@@ -52,7 +60,6 @@ public class ScrollRefreshLayout extends FrameLayout {
     private View mTarget;
 
     private int mTouchSlop;
-
     private float mVelocityY;
     GestureDetector gestureDetector = new GestureDetector(getContext(), new GestureDetector.SimpleOnGestureListener() {
         @Override
@@ -60,7 +67,7 @@ public class ScrollRefreshLayout extends FrameLayout {
             if (isRefreshing && distanceY >= mTouchSlop) {
                 tryCancelRefreshing();
             } else if (isLoadingMore && distanceY <= -mTouchSlop) {
-                tryCancelLoadingMore();
+                tryCancelLoadMore();
             }
             return super.onScroll(e1, e2, distanceX, distanceY);
         }
@@ -71,7 +78,6 @@ public class ScrollRefreshLayout extends FrameLayout {
             return super.onFling(e1, e2, velocityX, velocityY);
         }
     });
-    private float mOverScrollHeight;
     private float mMotionX;
     private float mMotionY;
 
@@ -97,13 +103,141 @@ public class ScrollRefreshLayout extends FrameLayout {
         mFooterHeight = a.getDimension(R.styleable.ScrollRefreshLayout_footerHeight, defaultFooterHeight);
         float defaultOverScrollHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 80, context.getResources().getDisplayMetrics());
         mOverScrollHeight = a.getDimension(R.styleable.ScrollRefreshLayout_overScrollHeight, defaultOverScrollHeight);
+        float defaultMaxScrollHeight = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 320, context.getResources().getDisplayMetrics());
+        mMaxScrollHeight = a.getDimension(R.styleable.ScrollRefreshLayout_maxScrollHeight, defaultMaxScrollHeight);
+
         a.recycle();
 
-        mMaxScrollHeaderLength = 4 * mHeaderHeight;
-        mMaxScrollFooterLength = 4 * mFooterHeight;
         mInterpolator = new DecelerateInterpolator();
         mTouchSlop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
         setPullListener(new DefaultPullListener());
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        switch (ev.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                mMotionX = ev.getX();
+                mMotionY = ev.getY();
+                break;
+            case MotionEvent.ACTION_MOVE:
+                float dx = ev.getX() - mMotionX;
+                float dy = ev.getY() - mMotionY;
+                if (Math.abs(dy) >= Math.abs(dx) && Math.abs(dy) > mTouchSlop) {
+                    if (dy > 0 && !ScrollUtil.canChildScrollUp(mTarget) && mRefreshEnabled) {
+                        mState = STATE_PULL_DOWN_TO_REFRESH;
+                        return true;
+                    }
+                    if (dy < 0 && !ScrollUtil.canChildScrollDown(mTarget) && mLoadMoreEnabled) {
+                        mState = STATE_PULL_UP_TO_LOAD_MORE;
+                        return true;
+                    }
+                }
+                break;
+        }
+        return super.onInterceptTouchEvent(ev);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (isRefreshing || isLoadingMore) {
+            return super.onTouchEvent(event);
+        }
+
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_MOVE:
+                float dy = event.getY() - mMotionY;
+                if (mState == STATE_PULL_DOWN_TO_REFRESH) {
+                    dy = Math.min(Math.max(0, dy), mMaxScrollHeight);
+                    if (mTarget != null) {
+                        float offsetY = mInterpolator.getInterpolation(dy / mMaxScrollHeight) * dy / 2;
+                        mTarget.setTranslationY(offsetY);
+                        mHeaderLayout.getLayoutParams().height = (int) offsetY;
+                        mHeaderLayout.requestLayout();
+                        if (mPullListener != null) {
+                            float fraction = offsetY / mHeaderHeight;
+                            if (fraction < 1f) {
+                                mPullListener.onPullingDownLightly(ScrollRefreshLayout.this, fraction);
+                            } else {
+                                mPullListener.onPullingDownDeeply(ScrollRefreshLayout.this, fraction);
+                            }
+                        }
+                    }
+                } else if (mState == STATE_PULL_UP_TO_LOAD_MORE) {
+                    dy = Math.min(Math.max(0, Math.abs(dy)), mMaxScrollHeight);
+                    if (mTarget != null) {
+                        float offsetY = -mInterpolator.getInterpolation(dy / mMaxScrollHeight) * dy / 2;
+                        mTarget.setTranslationY(offsetY);
+                        mFooterLayout.getLayoutParams().height = (int) -offsetY;
+                        mFooterLayout.requestLayout();
+
+                        if (mPullListener != null) {
+                            float fraction = offsetY / mFooterHeight;
+                            if (fraction > -1f) {
+                                mPullListener.onPullingUpLightly(ScrollRefreshLayout.this, fraction);
+                            } else {
+                                mPullListener.onPullingUpDeeply(ScrollRefreshLayout.this, fraction);
+                            }
+                        }
+                    }
+                }
+                break;
+            case MotionEvent.ACTION_CANCEL:
+            case MotionEvent.ACTION_UP:
+                if (mTarget != null) {
+                    if (mState == STATE_PULL_DOWN_TO_REFRESH) {
+                        if (mTarget.getTranslationY() >= mHeaderHeight) {
+                            animChildView(mHeaderHeight);
+                            isRefreshing = true;
+                            if (mPullListener != null) {
+                                mPullListener.onRefresh(ScrollRefreshLayout.this);
+                            }
+                        } else {
+                            animChildView(0f);
+                        }
+                    } else if (mState == STATE_PULL_UP_TO_LOAD_MORE) {
+                        if (Math.abs(mTarget.getTranslationY()) >= mFooterHeight) {
+                            animChildView(-mFooterHeight);
+                            isLoadingMore = true;
+                            if (mPullListener != null) {
+                                mPullListener.onLoadMore(ScrollRefreshLayout.this);
+                            }
+                        } else {
+                            animChildView(0f);
+                        }
+                    }
+                }
+                break;
+        }
+        return super.onTouchEvent(event);
+    }
+
+    private void animChildView(float translationY) {
+        final ObjectAnimator anim = ObjectAnimator.ofFloat(mTarget, "translationY", mTarget.getTranslationY(), translationY);
+        anim.setDuration(300);
+        anim.setInterpolator(new DecelerateInterpolator());
+        anim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                float height = Math.abs((float) animation.getAnimatedValue());
+                if (mState == STATE_PULL_DOWN_TO_REFRESH) {
+                    mHeaderLayout.getLayoutParams().height = (int) height;
+                    mHeaderLayout.requestLayout();
+
+                    if (mPullListener != null) {
+                        mPullListener.onPullingDownReleasing(ScrollRefreshLayout.this, height / mHeaderHeight);
+                    }
+                } else if (mState == STATE_PULL_UP_TO_LOAD_MORE) {
+                    mFooterLayout.getLayoutParams().height = (int) height;
+                    mFooterLayout.requestLayout();
+
+                    if (mPullListener != null) {
+                        mPullListener.onPullingUpReleasing(ScrollRefreshLayout.this, height / mFooterHeight);
+                    }
+                }
+            }
+        });
+        anim.start();
     }
 
     private void setPullListener(PullListener pullListener) {
@@ -216,12 +350,34 @@ public class ScrollRefreshLayout extends FrameLayout {
         anim.start();
     }
 
-    private void tryCancelLoadingMore() {
+    private void tryCancelLoadMore() {
         // // TODO: 2016/10/21
+        finishLoadMore();
+    }
+
+    private void finishLoadMore() {
+        isLoadingMore = false;
+        if (mPullListener != null) {
+            mPullListener.onFinishLoadMore();
+        }
+        if (mTarget != null) {
+            animChildView(0f);
+        }
     }
 
     private void tryCancelRefreshing() {
-        // // TODO: 2016/10/21  
+        // // TODO: 2016/10/21
+        finishRefresh();
+    }
+
+    private void finishRefresh() {
+        isRefreshing = false;
+        if (mPullListener != null) {
+            mPullListener.onFinishRefresh();
+        }
+        if (mTarget != null) {
+            animChildView(0f);
+        }
     }
 
     private void resolveAppBarLayoutStateChange() {
@@ -300,9 +456,78 @@ public class ScrollRefreshLayout extends FrameLayout {
 
     public interface PullListener {
 
+        void onPullingDownLightly(ScrollRefreshLayout scrollRefreshLayout, float fraction);
+
+        void onPullingDownDeeply(ScrollRefreshLayout scrollRefreshLayout, float fraction);
+
+        void onPullingUpLightly(ScrollRefreshLayout scrollRefreshLayout, float fraction);
+
+        void onPullingUpDeeply(ScrollRefreshLayout scrollRefreshLayout, float fraction);
+
+        void onPullingDownReleasing(ScrollRefreshLayout scrollRefreshLayout, float fraction);
+
+        void onPullingUpReleasing(ScrollRefreshLayout scrollRefreshLayout, float fraction);
+
+        void onRefresh(ScrollRefreshLayout scrollRefreshLayout);
+
+        void onLoadMore(ScrollRefreshLayout scrollRefreshLayout);
+
+        void onFinishRefresh();
+
+        void onFinishLoadMore();
+
     }
 
     private class DefaultPullListener implements PullListener {
 
+        @Override
+        public void onPullingDownLightly(ScrollRefreshLayout scrollRefreshLayout, float fraction) {
+
+        }
+
+        @Override
+        public void onPullingDownDeeply(ScrollRefreshLayout scrollRefreshLayout, float fraction) {
+
+        }
+
+        @Override
+        public void onPullingUpLightly(ScrollRefreshLayout scrollRefreshLayout, float fraction) {
+
+        }
+
+        @Override
+        public void onPullingUpDeeply(ScrollRefreshLayout scrollRefreshLayout, float fraction) {
+
+        }
+
+        @Override
+        public void onPullingDownReleasing(ScrollRefreshLayout scrollRefreshLayout, float fraction) {
+
+        }
+
+        @Override
+        public void onPullingUpReleasing(ScrollRefreshLayout scrollRefreshLayout, float fraction) {
+
+        }
+
+        @Override
+        public void onRefresh(ScrollRefreshLayout scrollRefreshLayout) {
+            finishRefresh();
+        }
+
+        @Override
+        public void onLoadMore(ScrollRefreshLayout scrollRefreshLayout) {
+            finishLoadMore();
+        }
+
+        @Override
+        public void onFinishRefresh() {
+
+        }
+
+        @Override
+        public void onFinishLoadMore() {
+
+        }
     }
 }

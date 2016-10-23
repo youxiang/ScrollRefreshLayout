@@ -6,5 +6,6 @@
         <attr name="headerHeight" format="dimension" />
         <attr name="footerHeight" format="dimension" />
         <attr name="overScrollHeight" format="dimension" />
+        <attr name="maxScrollHeight" format="dimension" />
     </declare-styleable>
 </resources>
